@@ -23,3 +23,6 @@
 
 (defn db-spec-for [model-name]
   (model-metadata-for model-name :db-spec))
+
+(defn pk-for [model-name]
+  (model-metadata-for model-name :pk))

@@ -1,5 +1,5 @@
 (ns clj-record.core
-  (:require [clojure.contrib.sql        :as sql]
+  (:require [clojure.java.jdbc          :as jdbc]
             [clojure.contrib.str-utils  :as str-utils])
   (:use (clj-record meta util callbacks)))
 
@@ -16,6 +16,9 @@
 
 (defn set-db-spec [model-name db-spec]
   (dosync (set-model-metadata-for model-name :db-spec db-spec)))
+
+(defn set-pk [model-name pk]
+  (dosync (set-model-metadata-for model-name :pk pk)))
 
 (defn to-conditions
   "Converts the given attribute map into a clojure.contrib.sql style 'where-params,'
@@ -44,15 +47,15 @@
   You're probably more interested in the 'transaction' macro."
   [db-spec & body]
   `(let [func# (fn [] ~@body)]
-    (if (sql/find-connection)
+    (if (jdbc/find-connection)
       (func#)
-      (sql/with-connection ~db-spec (func#)))))
+      (jdbc/with-connection ~db-spec (func#)))))
 
 (defmacro transaction
   "Runs body in a single DB transaction, first ensuring there's a connection."
   ([db-spec & body]
   `(connected ~db-spec
-    (sql/transaction
+    (jdbc/transaction
       ~@body))))
 
 (defmacro model-transaction
@@ -69,12 +72,14 @@ instance."
   so if you omit columns your callbacks will have to be written to tolerate incomplete records."
   [model-name select-query-and-values]
     (connected (db-spec-for model-name)
-      (sql/with-query-results rows select-query-and-values
-        (doall (after-load model-name rows)))))
+               (let [x (jdbc/with-query-results rows select-query-and-values
+                         (doall (after-load model-name rows)))]
+                 (println x)
+                 x)))
 
 (defn find-records
   "Returns a vector of matching records.
-  Given a where-params vector, uses it as-is. (See clojure.contrib.sql/with-query-results.)
+  Given a where-params vector, uses it as-is. (See clojure.contrib.jdbc/with-query-results.)
   Given a map of attribute-value pairs, uses to-conditions to convert to where-params."
   [model-name attributes-or-where-params]
   (let [[parameterized-where & values]
@@ -105,16 +110,19 @@ instance."
 (defn get-record
   "Retrieves record by id, throwing if not found."
   [model-name id]
-  (or (find-record model-name {:id id})
+  (or (find-record model-name {(keyword (pk-for model-name)) id})
       (throw (IllegalArgumentException. "Record does not exist"))))
+
+
 
 (defn insert
   "Inserts a record populated with attributes and returns the generated id."
   [model-name attributes]
   (transaction (db-spec-for model-name)
     (let [attributes (before-insert model-name (before-save model-name attributes))]
-      (sql/insert-values (table-name model-name) (keys attributes) (vals attributes)))
-    (sql/with-query-results rows [(id-query-for (db-spec-for model-name) (table-name model-name))]
+      (jdbc/insert-values (table-name model-name) (keys attributes) (vals attributes)))
+    (jdbc/with-query-results rows
+      [(id-query-for (db-spec-for model-name) (table-name model-name))]
       (let [id (val (first (first rows)))]
         (after-save model-name (after-insert model-name (assoc attributes :id id)))
         id))))
@@ -132,7 +140,7 @@ instance."
   (connected (db-spec-for model-name)
     (let [id (partial-record :id)
           partial-record (-> partial-record (run-callbacks model-name :before-save :before-update) (dissoc :id))]
-      (sql/update-values (table-name model-name) ["id = ?" id] partial-record)
+      (jdbc/update-values (table-name model-name) ["id = ?" id] partial-record)
       (let [output-record (assoc partial-record :id id)]
         (after-save model-name (after-update model-name output-record))
         output-record))))
@@ -142,7 +150,7 @@ instance."
   [model-name record]
   (connected (db-spec-for model-name)
     (before-destroy model-name record)
-    (sql/delete-rows (table-name model-name) ["id = ?" (:id record)])
+    (jdbc/delete-rows (table-name model-name) ["id = ?" (:id record)])
     (after-destroy model-name record)))
 
 (defn destroy-records
@@ -154,10 +162,10 @@ instance."
         [parameterized-where & values] conditions
         select-query (format "select * from %s where %s" model-table-name parameterized-where)]
     (connected (db-spec-for model-name)
-      (sql/with-query-results rows-to-delete (apply vector select-query values)
+      (jdbc/with-query-results rows-to-delete (apply vector select-query values)
         (doseq [record rows-to-delete]
           (before-destroy model-name record))
-        (sql/delete-rows model-table-name conditions)
+        (jdbc/delete-rows model-table-name conditions)
         (doall
           (map #(after-destroy model-name %) rows-to-delete))))))
 
@@ -165,7 +173,7 @@ instance."
   "Deletes all records matching (-> attributes to-conditions) without running callbacks."
   [model-name attributes]
   (connected (db-spec-for model-name)
-    (sql/delete-rows (table-name model-name) (to-conditions attributes))))
+    (jdbc/delete-rows (table-name model-name) (to-conditions attributes))))
 
 (defn- defs-from-option-groups [model-name option-groups]
   (reduce
@@ -199,11 +207,13 @@ instance."
   (let [model-name (last (str-utils/re-split #"\." (name (ns-name *ns*))))
         [top-level-options option-groups] (split-out-init-options init-options)
         tbl-name (or (top-level-options :table-name) (dashes-to-underscores (pluralize model-name)))
+        pk-name  (or (top-level-options :pk) "id")
         optional-defs (defs-from-option-groups model-name option-groups)]
     `(do
       (init-model-metadata ~model-name)
       (set-db-spec ~model-name ~'db)
       (set-table-name ~model-name ~tbl-name)
+      (set-pk ~model-name ~pk-name)
       (def ~'model-name ~model-name)
       (def ~'table-name (table-name ~model-name))
       (defn ~'model-metadata [& args#]
@@ -213,25 +223,25 @@ instance."
         ([] (record-count ~model-name))
         ([attributes#] (record-count ~model-name attributes#)))
       (defn ~'get-record [id#]
-        (get-record ~model-name id#))
+        (jdbc/with-naming-strategy {:keyword identity} (get-record ~model-name id#)))
       (defn ~'find-records [attributes#]
-        (find-records ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (find-records ~model-name attributes#)))
       (defn ~'find-record [attributes#]
-        (find-record ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (find-record ~model-name attributes#)))
       (defn ~'find-by-sql [select-query-and-values#]
-        (find-by-sql ~model-name select-query-and-values#))
+        (jdbc/with-naming-strategy {:keyword identity} (find-by-sql ~model-name select-query-and-values#)))
       (defn ~'create [attributes#]
-        (create ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (create ~model-name attributes#)))
       (defn ~'insert [attributes#]
-        (insert ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (insert ~model-name attributes#)))
       (defn ~'update [attributes#]
-        (update ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (update ~model-name attributes#)))
       (defn ~'destroy-record [record#]
-        (destroy-record ~model-name record#))
+        (jdbc/with-naming-strategy {:keyword identity} (destroy-record ~model-name record#)))
       (defn ~'destroy-records [attributes#]
-        (destroy-records ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (destroy-records ~model-name attributes#)))
       (defn ~'delete-records [attributes#]
-        (delete-records ~model-name attributes#))
+        (jdbc/with-naming-strategy {:keyword identity} (delete-records ~model-name attributes#)))
       (defn ~'validate [record#]
         (~'clj-record.validation/validate ~model-name record#))
       (defn ~'after-destroy [attributes#]
