@@ -3,14 +3,14 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.clojars.ithayer</groupId>
   <artifactId>clj-record</artifactId>
-  <version>1.0.1-SNAPSHOT</version>
+  <version>1.0.2-SNAPSHOT</version>
   <name>clj-record</name>
   <description>A pseudo-port of ActiveRecord to the Clojure programming language</description>
   <url>http://github.com/itheyr/clj-record</url>
   <scm>
     <connection>scm:git:git://github.com/ithayer/clj-record.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/ithayer/clj-record.git</developerConnection>
-    <tag>0cd695c954535d01033bd416c9ce371620c66f02</tag>
+    <tag>9406a5d5f40a01ed95c390eba561c9ec08f42f12</tag>
     <url>https://github.com/ithayer/clj-record</url>
   </scm>
   <build>
