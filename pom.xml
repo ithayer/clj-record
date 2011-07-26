@@ -10,7 +10,7 @@
   <scm>
     <connection>scm:git:git://github.com/ithayer/clj-record.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/ithayer/clj-record.git</developerConnection>
-    <tag>e35caa443a6499307f577dd0eca17a865f34ced3</tag>
+    <tag>5ba02ef74721ee8ee6bb5f1e30aed5d24f55b164</tag>
     <url>https://github.com/ithayer/clj-record</url>
   </scm>
   <build>
