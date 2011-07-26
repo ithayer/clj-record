@@ -209,8 +209,9 @@ instance."
         (nnext remaining-options))
       [top-level-options remaining-options])))
 
-(defmacro create-model [model-name & init-options]
-  (let [[top-level-options option-groups] (split-out-init-options init-options)
+(defmacro create-model [model-symbol & init-options]
+  (let [model-name (str model-symbol)
+        [top-level-options option-groups] (split-out-init-options init-options)
         tbl-name (or (top-level-options :table-name) (dashes-to-underscores (pluralize model-name)))
         pk-name  (or (top-level-options :pk) "id")
         optional-defs (defs-from-option-groups model-name option-groups)
@@ -221,7 +222,7 @@ instance."
        (set-db-spec ~model-name ~'db)
        (set-table-name ~model-name ~tbl-name)
        (set-pk ~model-name ~pk-name)
-       (def ~model-name
+       (def ~model-symbol
          {:model ~model-name
           :table (table-name ~model-name)
           :metadata  (fn [& args#] (apply model-metadata-for ~model-name args#))
