@@ -215,8 +215,8 @@ instance."
         tbl-name (or (top-level-options :table-name) (dashes-to-underscores (pluralize model-name)))
         pk-name  (or (top-level-options :pk) "id")
         optional-defs (defs-from-option-groups model-name option-groups)
-        quoting-fns {:keyword (fn [x#] (println (str "x=" x#)) x#)
-                     :entity (fn [x#] (println (str "y=" x#)) (str "\"" x# "\"")) }]
+        quoting-fns {:keyword (fn [x#] x#)
+                     :entity (fn [x#] (str "\"" x# "\"")) }]
     `(do
        (init-model-metadata ~model-name)
        (set-db-spec ~model-name ~'db)
