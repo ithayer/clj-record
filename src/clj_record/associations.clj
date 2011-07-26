@@ -24,7 +24,7 @@
   [model-name association-name & options]
   (let [opts (apply hash-map options)
         associated-model-name (str (or (:model opts) (singularize (name association-name))))
-        foreign-key-attribute (keyword (or (:fk opts) (str (dashes-to-underscores model-name) "_" (pk-for associated-model-name))))
+        foreign-key-attribute (keyword (or (:fk opts) (str (dashes-to-underscores model-name) "_" (pk-for model-name))))
         find-fn-name (symbol (str "find-" association-name))
         destroy-fn-name (symbol (str "destroy-" association-name))]
     `(do
