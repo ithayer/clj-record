@@ -1,6 +1,6 @@
-(defproject clj-record "1.0-SNAPSHOT"
+(defproject clj-record "1.0.1-SNAPSHOT"
   :description "A pseudo-port of ActiveRecord to the Clojure programming language"
-  :url "http://github.com/duelinmarkers/clj-record"
+  :url "http://github.com/itheyr/clj-record"
   :dependencies [[org.clojure/clojure "1.2.1"]
                  [org.clojure/clojure-contrib "1.2.0"]
                  [org.clojure/java.jdbc       "0.0.5"]
