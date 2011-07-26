@@ -1,4 +1,5 @@
 (ns clj-record.associations
+  (:require [clojure.java.jdbc          :as jdbc])
   (:use clj-record.meta
         clj-record.util))
 
@@ -9,6 +10,9 @@
   [model-name association-type-sym association-name & options]
   (let [assoc-fn (ns-resolve 'clj-record.associations association-type-sym)]
     (apply assoc-fn model-name association-name options)))
+
+(def quoting-fns {:keyword (fn [x#] x#)
+                  :entity (fn [x#] (str "\"" x# "\""))})
 
 (defn has-many
   "Defines an association to a model whose name is infered by singularizing association-name.
@@ -25,13 +29,17 @@
   (let [opts (apply hash-map options)
         associated-model-name (str (or (:model opts) (singularize (name association-name))))
         foreign-key-attribute (keyword (or (:fk opts) (str (dashes-to-underscores model-name) "_" (pk-for model-name))))
-        find-fn-name (symbol (str "find-" association-name))
-        destroy-fn-name (symbol (str "destroy-" association-name))]
-    `(do
-      (defn ~find-fn-name [record#]
-        (clj-record.core/find-records ~associated-model-name {~foreign-key-attribute (record# (keyword (~pk-for ~associated-model-name)))}))
-      (defn ~destroy-fn-name [record#]
-        (clj-record.core/destroy-records ~associated-model-name {~foreign-key-attribute (record# (keyword (~pk-for ~associated-model-name)))})))))
+        find-fn-name (keyword (str "find-" association-name))
+        destroy-fn-name (keyword (str "destroy-" association-name))]
+    `{~find-fn-name (fn  [record#]
+                      (jdbc/with-naming-strategy
+                        quoting-fns
+                        (clj-record.core/find-records
+                         ~associated-model-name {~foreign-key-attribute (record# (keyword (~pk-for ~model-name)))})))
+      ~destroy-fn-name (fn [record#]
+                         (jdbc/with-naming-strategy
+                           quoting-fns
+                           (clj-record.core/destroy-records ~associated-model-name {~foreign-key-attribute (record# (keyword (~pk-for ~associated-model-name)))})))}))
 
 (defn belongs-to
   "Defines an association to a model named association-name.
@@ -53,9 +61,11 @@
   [model-name association-name & options]
   (let [opts (apply hash-map options)
         associated-model-name (str (or (:model opts) association-name))
-        find-fn-name (symbol (str "find-" association-name))
+        find-fn-name (keyword (str "find-" association-name))
         foreign-key-attribute (keyword (or
                                         (:fk opts)
                                         (str (dashes-to-underscores (str association-name)) "_" (pk-for associated-model-name))))]
-    `(defn ~find-fn-name [record#]
-      (clj-record.core/get-record ~associated-model-name (~foreign-key-attribute record#)))))
+    `{~find-fn-name (fn [record#]
+                      (jdbc/with-naming-strategy
+                        quoting-fns
+                        (clj-record.core/get-record ~associated-model-name (~foreign-key-attribute record#))))}))

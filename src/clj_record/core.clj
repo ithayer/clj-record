@@ -1,6 +1,7 @@
 (ns clj-record.core
   (:require [clojure.java.jdbc          :as jdbc]
-            [clojure.contrib.str-utils  :as str-utils])
+            [clojure.contrib.str-utils  :as str-utils]
+            [clojure.contrib.logging    :as lg])
   (:use (clj-record meta util callbacks)))
 
 
@@ -84,7 +85,10 @@ instance."
           (if (map? attributes-or-where-params)
             (to-conditions attributes-or-where-params)
             attributes-or-where-params)
-          select-query (format "select * from %s where %s" (table-name model-name) parameterized-where)]
+          select-query (let  [x (format "select * from %s where %s" (table-name model-name) parameterized-where)]
+                         (println x)
+                         x)]
+    
     (find-by-sql model-name (apply vector select-query values))))
 
 (defn find-record
@@ -221,67 +225,67 @@ instance."
        (set-table-name ~model-name ~tbl-name)
        (set-pk ~model-name ~pk-name)
        (def ~model-symbol
-         {:model ~model-name
-          :table (table-name ~model-name)
-          :metadata  (fn [& args#] (apply model-metadata-for ~model-name args#))
-          :record-count (fn
-                          ([] (record-count ~model-name))
-                          ([attributes#] (record-count ~model-name attributes#)))
-          :get-record (fn [id#]
-                        (jdbc/with-naming-strategy
-                          ~quoting-fns (get-record ~model-name id#)))
-          :find-records (fn [attributes#]
-                          (jdbc/with-naming-strategy
-                            ~quoting-fns (find-records ~model-name attributes#)))
-          :find-record (fn [attributes#]
-                         (jdbc/with-naming-strategy
-                           ~quoting-fns (find-record ~model-name attributes#)))
-          :find-by-sql (fn [select-query-and-values#]
-                         (jdbc/with-naming-strategy
-                           ~quoting-fns
-                           (find-by-sql ~model-name select-query-and-values#)))
-          :create (fn [attributes#]
-                    (jdbc/with-naming-strategy
-                      ~quoting-fns
-                      (create ~model-name attributes#)))
-          :insert (fn [attributes#]
-                    (jdbc/with-naming-strategy ~quoting-fns
-                      (insert ~model-name attributes#)))
-          :update (fn [attributes#]
-                    (jdbc/with-naming-strategy
-                      ~quoting-fns (update ~model-name attributes#)))
-          :destroy-record (fn [record#]
-                            (jdbc/with-naming-strategy
-                              ~quoting-fns (destroy-record ~model-name record#)))
-          :destroy-records (fn [attributes#]
-                             (jdbc/with-naming-strategy
-                               ~quoting-fns
-                               (destroy-records ~model-name attributes#)))
-          :delete-records (fn [attributes#]
-                            (jdbc/with-naming-strategy
-                              ~quoting-fns (delete-records ~model-name attributes#)))
-          :validate (fn [record#]
-                      (~'clj-record.validation/validate ~model-name record#))
-          :after-destroy (fn [attributes#]
-                           (after-destroy ~model-name attributes#))
-          :after-insert (fn [attributes#]
-                          (after-insert ~model-name attributes#))
-          :after-load (fn [rows#]
-                        (after-load ~model-name rows#))
-          :after-save (fn [attributes#]
-                        (after-save ~model-name attributes#))
-          :after-update (fn [attributes#]
-                          (after-update ~model-name attributes#))
-          :after-validation (fn [attributes#]
-                              (after-validation ~model-name attributes#))
-          :before-destroy (fn [attributes#]
-                            (before-destroy ~model-name attributes#))
-          :before-insert (fn [attributes#]
-                           (before-insert ~model-name attributes#))
-          :before-save (fn [attributes#]
-                         (before-save ~model-name attributes#))
-          :before-update (fn [attributes#]
-                           (before-update ~model-name attributes#))
-          :before-validation (fn [attributes#]
-                               (before-validation ~model-name attributes#))})
-         ~@optional-defs)))
+         (merge {:model ~model-name
+                 :table (table-name ~model-name)
+                 :metadata  (fn [& args#] (apply model-metadata-for ~model-name args#))
+                 :record-count (fn
+                                 ([] (record-count ~model-name))
+                                 ([attributes#] (record-count ~model-name attributes#)))
+                 :get-record (fn [id#]
+                               (jdbc/with-naming-strategy
+                                 ~quoting-fns (get-record ~model-name id#)))
+                 :find-records (fn [attributes#]
+                                 (jdbc/with-naming-strategy
+                                   ~quoting-fns (find-records ~model-name attributes#)))
+                 :find-record (fn [attributes#]
+                                (jdbc/with-naming-strategy
+                                  ~quoting-fns (find-record ~model-name attributes#)))
+                 :find-by-sql (fn [select-query-and-values#]
+                                (jdbc/with-naming-strategy
+                                  ~quoting-fns
+                                  (find-by-sql ~model-name select-query-and-values#)))
+                 :create (fn [attributes#]
+                           (jdbc/with-naming-strategy
+                             ~quoting-fns
+                             (create ~model-name attributes#)))
+                 :insert (fn [attributes#]
+                           (jdbc/with-naming-strategy ~quoting-fns
+                             (insert ~model-name attributes#)))
+                 :update (fn [attributes#]
+                           (jdbc/with-naming-strategy
+                             ~quoting-fns (update ~model-name attributes#)))
+                 :destroy-record (fn [record#]
+                                   (jdbc/with-naming-strategy
+                                     ~quoting-fns (destroy-record ~model-name record#)))
+                 :destroy-records (fn [attributes#]
+                                    (jdbc/with-naming-strategy
+                                      ~quoting-fns
+                                      (destroy-records ~model-name attributes#)))
+                 :delete-records (fn [attributes#]
+                                   (jdbc/with-naming-strategy
+                                     ~quoting-fns (delete-records ~model-name attributes#)))
+                 :validate (fn [record#]
+                             (~'clj-record.validation/validate ~model-name record#))
+                 :after-destroy (fn [attributes#]
+                                  (after-destroy ~model-name attributes#))
+                 :after-insert (fn [attributes#]
+                                 (after-insert ~model-name attributes#))
+                 :after-load (fn [rows#]
+                               (after-load ~model-name rows#))
+                 :after-save (fn [attributes#]
+                               (after-save ~model-name attributes#))
+                 :after-update (fn [attributes#]
+                                 (after-update ~model-name attributes#))
+                 :after-validation (fn [attributes#]
+                                     (after-validation ~model-name attributes#))
+                 :before-destroy (fn [attributes#]
+                                   (before-destroy ~model-name attributes#))
+                 :before-insert (fn [attributes#]
+                                  (before-insert ~model-name attributes#))
+                 :before-save (fn [attributes#]
+                                (before-save ~model-name attributes#))
+                 :before-update (fn [attributes#]
+                                  (before-update ~model-name attributes#))
+                 :before-validation (fn [attributes#]
+                                      (before-validation ~model-name attributes#))}
+                ~@optional-defs)))))
