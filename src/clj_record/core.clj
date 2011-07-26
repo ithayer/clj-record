@@ -72,10 +72,8 @@ instance."
   so if you omit columns your callbacks will have to be written to tolerate incomplete records."
   [model-name select-query-and-values]
     (connected (db-spec-for model-name)
-               (let [x (jdbc/with-query-results rows select-query-and-values
-                         (doall (after-load model-name rows)))]
-                 (println x)
-                 x)))
+               (jdbc/with-query-results rows select-query-and-values
+                 (doall (after-load model-name rows)))))
 
 (defn find-records
   "Returns a vector of matching records.
