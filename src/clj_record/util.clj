@@ -22,8 +22,8 @@
 (defmulti  id-query-for :subprotocol)
 (defmethod id-query-for "derby" [_ _]
   "VALUES IDENTITY_VAL_LOCAL()")
-(defmethod id-query-for "postgresql" [_ table-name]
-  (str "SELECT currval(pg_get_serial_sequence('" table-name "','id'))"))
+(defmethod id-query-for "postgresql" [_ table-name #^String pk]
+  (str "SELECT currval(pg_get_serial_sequence('" table-name "','" pk "'))"))
 (defmethod id-query-for "mysql" [_ _]
   "SELECT LAST_INSERT_ID()")
 (defmethod id-query-for "h2" [_ _]

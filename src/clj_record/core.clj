@@ -113,19 +113,29 @@ instance."
   (or (find-record model-name {(keyword (pk-for model-name)) id})
       (throw (IllegalArgumentException. "Record does not exist"))))
 
-
+(defn- query-for-auto-id [model-name pk-name]
+  "Executes a query to get the current value of a auto-incremented sequence."
+  (jdbc/with-query-results rows [(id-query-for (db-spec-for model-name)
+                                               (table-name model-name)
+                                               pk-name)]
+    (val (ffirst rows))))
 
 (defn insert
   "Inserts a record populated with attributes and returns the generated id."
   [model-name attributes]
-  (transaction (db-spec-for model-name)
-    (let [attributes (before-insert model-name (before-save model-name attributes))]
-      (jdbc/insert-values (table-name model-name) (keys attributes) (vals attributes)))
-    (jdbc/with-query-results rows
-      [(id-query-for (db-spec-for model-name) (table-name model-name))]
-      (let [id (val (first (first rows)))]
-        (after-save model-name (after-insert model-name (assoc attributes :id id)))
-        id))))
+  (let [pk-name (pk-for model-name)]
+    (transaction
+     (db-spec-for model-name)
+     (let [attributes (before-insert model-name (before-save model-name attributes))]
+       (jdbc/insert-values (table-name model-name)
+                           (keys attributes)
+                           (vals attributes)))
+     (let [id (or ((keyword pk-name) attributes) ;; id in attributes or query for it.
+                  (query-for-auto-id model-name pk-name))]
+       (after-save model-name
+                   (after-insert model-name
+                                 (assoc attributes (keyword pk-name) id)))
+       id))))
 
 (defn create
   "Inserts a record populated with attributes and returns it."
@@ -137,11 +147,13 @@ instance."
 (defn update
   "Updates by (partial-record :id), updating only those columns included in partial-record."
   [model-name partial-record]
-  (connected (db-spec-for model-name)
-    (let [id (partial-record :id)
-          partial-record (-> partial-record (run-callbacks model-name :before-save :before-update) (dissoc :id))]
-      (jdbc/update-values (table-name model-name) ["id = ?" id] partial-record)
-      (let [output-record (assoc partial-record :id id)]
+  (connected
+   (db-spec-for model-name)
+   (let [pk-keyword (keyword (pk-for model-name))
+         id (partial-record pk-keyword)
+         partial-record (-> partial-record (run-callbacks model-name :before-save :before-update) (dissoc pk-keyword))]
+      (jdbc/update-values (table-name model-name) [(str (pk-for model-name) " = ?") id] partial-record)
+      (let [output-record (assoc partial-record pk-keyword id)]
         (after-save model-name (after-update model-name output-record))
         output-record))))
 
@@ -150,7 +162,9 @@ instance."
   [model-name record]
   (connected (db-spec-for model-name)
     (before-destroy model-name record)
-    (jdbc/delete-rows (table-name model-name) ["id = ?" (:id record)])
+    (jdbc/delete-rows
+     (table-name model-name)
+     [(str (pk-for model-name) " = ?") ((keyword (pk-for model-name)) record)])
     (after-destroy model-name record)))
 
 (defn destroy-records
@@ -195,75 +209,81 @@ instance."
         (nnext remaining-options))
       [top-level-options remaining-options])))
 
-(defmacro init-model
-  "Macro to create a model out of a clojure namespace.
-  The segment of the namespace name following the last dot is used as the model-name.
-  Model-specific versions of most public functions in clj-record.core are defined 
-  in the model namespace (minus the model-name as first argument).
-  Optional forms for associations and validation are specified here.
-  
-  See clj_record/test/model/manufacturer.clj for an example."
-  [& init-options]
+(defmacro create-model [logical-name & init-options]
   (let [model-name (last (str-utils/re-split #"\." (name (ns-name *ns*))))
         [top-level-options option-groups] (split-out-init-options init-options)
         tbl-name (or (top-level-options :table-name) (dashes-to-underscores (pluralize model-name)))
         pk-name  (or (top-level-options :pk) "id")
-        optional-defs (defs-from-option-groups model-name option-groups)]
+        optional-defs (defs-from-option-groups model-name option-groups)
+        quoting-fns {:keyword (fn [x#] (println (str "x=" x#)) x#)
+                     :entity (fn [x#] (println (str "y=" x#)) (str "\"" x# "\"")) }]
     `(do
-      (init-model-metadata ~model-name)
-      (set-db-spec ~model-name ~'db)
-      (set-table-name ~model-name ~tbl-name)
-      (set-pk ~model-name ~pk-name)
-      (def ~'model-name ~model-name)
-      (def ~'table-name (table-name ~model-name))
-      (defn ~'model-metadata [& args#]
-        (apply model-metadata-for ~model-name args#))
-      (defn ~'table-name [] (table-name ~model-name))
-      (defn ~'record-count 
-        ([] (record-count ~model-name))
-        ([attributes#] (record-count ~model-name attributes#)))
-      (defn ~'get-record [id#]
-        (jdbc/with-naming-strategy {:keyword identity} (get-record ~model-name id#)))
-      (defn ~'find-records [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (find-records ~model-name attributes#)))
-      (defn ~'find-record [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (find-record ~model-name attributes#)))
-      (defn ~'find-by-sql [select-query-and-values#]
-        (jdbc/with-naming-strategy {:keyword identity} (find-by-sql ~model-name select-query-and-values#)))
-      (defn ~'create [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (create ~model-name attributes#)))
-      (defn ~'insert [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (insert ~model-name attributes#)))
-      (defn ~'update [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (update ~model-name attributes#)))
-      (defn ~'destroy-record [record#]
-        (jdbc/with-naming-strategy {:keyword identity} (destroy-record ~model-name record#)))
-      (defn ~'destroy-records [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (destroy-records ~model-name attributes#)))
-      (defn ~'delete-records [attributes#]
-        (jdbc/with-naming-strategy {:keyword identity} (delete-records ~model-name attributes#)))
-      (defn ~'validate [record#]
-        (~'clj-record.validation/validate ~model-name record#))
-      (defn ~'after-destroy [attributes#]
-        (after-destroy ~model-name attributes#))
-      (defn ~'after-insert [attributes#]
-        (after-insert ~model-name attributes#))
-      (defn ~'after-load [rows#]
-        (after-load ~model-name rows#))
-      (defn ~'after-save [attributes#]
-        (after-save ~model-name attributes#))
-      (defn ~'after-update [attributes#]
-        (after-update ~model-name attributes#))
-      (defn ~'after-validation [attributes#]
-        (after-validation ~model-name attributes#))
-      (defn ~'before-destroy [attributes#]
-        (before-destroy ~model-name attributes#))
-      (defn ~'before-insert [attributes#]
-        (before-insert ~model-name attributes#))
-      (defn ~'before-save [attributes#]
-        (before-save ~model-name attributes#))
-      (defn ~'before-update [attributes#]
-        (before-update ~model-name attributes#))
-      (defn ~'before-validation [attributes#]
-        (before-validation ~model-name attributes#))
-      ~@optional-defs)))
+       (init-model-metadata ~model-name)
+       (set-db-spec ~model-name ~'db)
+       (set-table-name ~model-name ~tbl-name)
+       (set-pk ~model-name ~pk-name)
+       (def ~logical-name
+         {:model ~model-name
+          :table (table-name ~model-name)
+          :metadata  (fn [& args#] (apply model-metadata-for ~model-name args#))
+          :record-count (fn
+                          ([] (record-count ~model-name))
+                          ([attributes#] (record-count ~model-name attributes#)))
+          :get-record (fn [id#]
+                        (jdbc/with-naming-strategy
+                          ~quoting-fns (get-record ~model-name id#)))
+          :find-records (fn [attributes#]
+                          (jdbc/with-naming-strategy
+                            ~quoting-fns (find-records ~model-name attributes#)))
+          :find-record (fn [attributes#]
+                         (jdbc/with-naming-strategy
+                           ~quoting-fns (find-record ~model-name attributes#)))
+          :find-by-sql (fn [select-query-and-values#]
+                         (jdbc/with-naming-strategy
+                           ~quoting-fns
+                           (find-by-sql ~model-name select-query-and-values#)))
+          :create (fn [attributes#]
+                    (jdbc/with-naming-strategy
+                      ~quoting-fns
+                      (create ~model-name attributes#)))
+          :insert (fn [attributes#]
+                    (jdbc/with-naming-strategy ~quoting-fns
+                      (insert ~model-name attributes#)))
+          :update (fn [attributes#]
+                    (jdbc/with-naming-strategy
+                      ~quoting-fns (update ~model-name attributes#)))
+          :destroy-record (fn [record#]
+                            (jdbc/with-naming-strategy
+                              ~quoting-fns (destroy-record ~model-name record#)))
+          :destroy-records (fn [attributes#]
+                             (jdbc/with-naming-strategy
+                               ~quoting-fns
+                               (destroy-records ~model-name attributes#)))
+          :delete-records (fn [attributes#]
+                            (jdbc/with-naming-strategy
+                              ~quoting-fns (delete-records ~model-name attributes#)))
+          :validate (fn [record#]
+                      (~'clj-record.validation/validate ~model-name record#))
+          :after-destroy (fn [attributes#]
+                           (after-destroy ~model-name attributes#))
+          :after-insert (fn [attributes#]
+                          (after-insert ~model-name attributes#))
+          :after-load (fn [rows#]
+                        (after-load ~model-name rows#))
+          :after-save (fn [attributes#]
+                        (after-save ~model-name attributes#))
+          :after-update (fn [attributes#]
+                          (after-update ~model-name attributes#))
+          :after-validation (fn [attributes#]
+                              (after-validation ~model-name attributes#))
+          :before-destroy (fn [attributes#]
+                            (before-destroy ~model-name attributes#))
+          :before-insert (fn [attributes#]
+                           (before-insert ~model-name attributes#))
+          :before-save (fn [attributes#]
+                         (before-save ~model-name attributes#))
+          :before-update (fn [attributes#]
+                           (before-update ~model-name attributes#))
+          :before-validation (fn [attributes#]
+                               (before-validation ~model-name attributes#))})
+         ~@optional-defs)))
