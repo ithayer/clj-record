@@ -19,7 +19,7 @@
 (defn dashes-to-underscores [s]
   (.replaceAll s "-" "_"))
 
-(defmulti  id-query-for :subprotocol)
+(defmulti  id-query-for (fn [x & args] (:subprotocol x)))
 (defmethod id-query-for "derby" [_ _]
   "VALUES IDENTITY_VAL_LOCAL()")
 (defmethod id-query-for "postgresql" [_ table-name #^String pk]
