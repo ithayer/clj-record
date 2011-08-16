@@ -32,12 +32,12 @@
       (fn [[parameterized-conditions values] [attribute value]]
        (cond
          (nil? value)
-         [(conj parameterized-conditions (format "%s IS NULL" (name attribute))) values]
+         [(conj parameterized-conditions (format "\"%s\" IS NULL" (name attribute))) values]
          (fn? value)
          (let [[new-condition new-values] (value attribute)]
            [(conj parameterized-conditions new-condition) (apply conj values new-values)])
          :else
-         [(conj parameterized-conditions (format "%s = ?" (name attribute))) (conj values value)]))
+         [(conj parameterized-conditions (format "\"%s\" = ?" (name attribute))) (conj values value)]))
       [[] []]
       attributes)]
     (apply vector (str-utils/str-join " AND " parameterized-conditions) values)))
@@ -72,7 +72,7 @@ instance."
   This allows the caller total control over the SELECT and FROM clauses, but note that callbacks are still run,
   so if you omit columns your callbacks will have to be written to tolerate incomplete records."
   [model-name select-query-and-values]
-    (connected (db-spec-for model-name)
+  (connected (db-spec-for model-name)
                (jdbc/with-query-results rows select-query-and-values
                  (doall (after-load model-name rows)))))
 
@@ -151,7 +151,7 @@ instance."
    (let [pk-keyword (keyword (pk-for model-name))
          id (partial-record pk-keyword)
          partial-record (-> partial-record (run-callbacks model-name :before-save :before-update) (dissoc pk-keyword))]
-      (jdbc/update-values (table-name model-name) [(str (pk-for model-name) " = ?") id] partial-record)
+      (jdbc/update-values (table-name model-name) [(str "\"" (pk-for model-name) "\" = ?") id] partial-record)
       (let [output-record (assoc partial-record pk-keyword id)]
         (after-save model-name (after-update model-name output-record))
         output-record))))
@@ -163,7 +163,7 @@ instance."
     (before-destroy model-name record)
     (jdbc/delete-rows
      (table-name model-name)
-     [(str (pk-for model-name) " = ?") ((keyword (pk-for model-name)) record)])
+     [(str "\"" (pk-for model-name) "\" = ?") ((keyword (pk-for model-name)) record)])
     (after-destroy model-name record)))
 
 (defn destroy-records
